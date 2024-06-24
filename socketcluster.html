@@ -5,8 +5,9 @@
     <title>WebSocket</title>
     <script type="text/javascript" src="socketcluster-client.min.js"></script>
     <script type="text/javascript" src="sc-codec-min-bin.js"></script>
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script><script src="https://rawgit.com/abodelot/jquery.json-viewer/master/json-viewer/jquery.json-viewer.js"></script>
-    <link href="https://rawgit.com/abodelot/jquery.json-viewer/master/json-viewer/jquery.json-viewer.css" rel="stylesheet"/>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery.json-viewer@1.5.0/json-viewer/jquery.json-viewer.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/jquery.json-viewer@1.5.0/json-viewer/jquery.json-viewer.min.css" rel="stylesheet"/>
 </head>
 
 <body>
@@ -151,17 +152,48 @@
     }
 
     function subscribeMarket(data) {
+        let collect = [];
         for (const stock of data) {
             (async () => {
                 let channel = socket.subscribe(`market.bidoffer.${stock.ticker}`);
                 await channel.listener('subscribe').once();
-                console.log(`subscribe: market.bidoffer.${stock.ticker}`);
 
                 for await (let st of channel) {
-                    const change = ((((st?.c || st?.re)/1000 - stock.value)/(stock.value))*100).toFixed(2);
-                    if (change <= 2) {
+                    let change;
+                    if(st?.ss == 'ATO' || st?.ss == 'ATC') {
+                      change = st?.ep? ((((st?.ep)/1000 - stock.value)/(stock.value))*100).toFixed(2): undefined;
+                    } else {
+                      change = ((((st?.c || st?.re)/1000 - stock.value)/(stock.value))*100).toFixed(2);
+                    }
+                    if (Math.abs(change) <= 1) {
                         notify({
-                            title: `${stock.ticker} chạm giá ${change}`,
+                            title: `${stock.ticker} recomment: ${stock.value} price: ${stock.ep/1000} change: ${change}`,
+                            body: stock.reason
+                        })
+                    }
+                }
+            })();
+            
+        }
+
+        for (const stock of data) {
+            (async () => {
+                let channel = socket.subscribe(`market.quote.${stock.ticker}`);
+                await channel.listener('subscribe').once();
+
+                for await (let st of channel) {
+                    let change;
+                    if(st?.ss == 'ATO' || st?.ss == 'ATC') {
+                      change = st?.ep? ((((st?.ep)/1000 - stock.value)/(stock.value))*100).toFixed(2): undefined;
+                    } else {
+                      change = ((((st?.c || st?.re)/1000 - stock.value)/(stock.value))*100).toFixed(2);
+                    }
+                    const exist = collect.filter((o) => { return o?.s == st?.s })
+                    if (Math.abs(change) <= 1 && exist?.length == 0) {
+                        collect.push(st);
+                        console.log(collect);
+                        notify({
+                            title: `${stock.ticker} recomment: ${stock.value} price: ${stock.c/1000} change: ${change}`,
                             body: stock.reason
                         })
                     }
