@@ -165,7 +165,7 @@
                     } else {
                       change = ((((st?.c || st?.re)/1000 - stock.value)/(stock.value))*100).toFixed(2);
                     }
-                    if (Math.abs(change) <= 1) {
+                    if (Math.abs(change) <= 1 && stock.ep) {
                         notify({
                             title: `${stock.ticker} recomment: ${stock.value} price: ${stock.ep/1000} change: ${change}`,
                             body: stock.reason
