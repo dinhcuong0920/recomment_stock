@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>WebSocket</title>
+    <script type="text/javascript" src="socketcluster-client.min.js"></script>
+    <script type="text/javascript" src="sc-codec-min-bin.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery.json-viewer@1.5.0/json-viewer/jquery.json-viewer.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/jquery.json-viewer@1.5.0/json-viewer/jquery.json-viewer.min.css" rel="stylesheet"/>
+</head>
+
+<body>
+<div class="container">
+    SC Host:
+    <input id="sc_host" value="wts.finavi.com.vn"/>
+    <select id="slhost" onchange="changeHost(this.value)">
+        <option value="none">none</option>
+        <option value="grooo-dev">grooo-dev-ip</option>
+        <option value="grooo-dev-domain">grooo-dev-domain</option>
+    </select>
+
+    _ SC Port:
+    <input id="sc_port" value="443"/>
+
+    _ SC Path:
+    <input id="sc_path" value="/ws/"/>
+
+    _ SC Secure:
+    <input type="checkbox" id="sc_secure" value="checked"/>
+    <button onclick="connect()">Connect</button>
+
+
+    <table>
+        <tr>
+            <td>channel</td>
+            <td><input type="text" id="channelTxt" value="notify.user."/></td>
+            <td>
+                <button onclick="subscribe()">subscribe</button>
+            </td>
+        </tr>
+        <tr>
+            <td>loginData</td>
+            <td><textarea cols="60" rows="10" id="dataLogin"></textarea></td>
+            <td>
+                <button onclick="login()">login</button>
+            </td>
+        </tr>
+        <tr>
+            <td>channel</td>
+            <td><textarea cols="60" rows="15" id="dataPublish"></textarea></td>
+            <td>
+                <button onclick="publish()">publish</button>
+                <button onclick="publishObject()">publishObject</button>
+            </td>
+        </tr>
+    </table>
+    <div>
+        some channels: market.bidoffer.BID, market.quote.BID, copyTrade.{userId}, copyTrade.portfolio.{portfolioId}, notify.user.{userId}, notify.account.C780244D
+    </div>
+
+    
+
+    <pre id="json-renderer"></pre>
+
+    <pre id="portfolio"></pre>
+
+
+</div>
+
+
+<script type="text/javascript">
+    let socket;
+
+    function splitStringWithNewline(str, chunkSize) {
+        const regex = new RegExp(`.{1,${chunkSize}}`, 'g');
+        const chunks = str.match(regex);
+        return chunks.join('\n');
+    }
+
+
+    
+    const notify = (data) => {
+        if (!window.Notification) {
+            console.log('Browser does not support notifications.');
+        } else {
+
+            const notification = () => new Notification(data.title, {
+                    body: data.body,
+                });
+
+            if (Notification.permission === 'granted') {
+                notification();
+                
+            } else {
+                Notification.requestPermission().then(function (p) {
+                    if (p === 'granted') {
+                        notification();
+                    } else {
+                        console.log('User blocked notifications.');
+                    }
+                }).catch(function (err) {
+                    console.error(err);
+                });
+            }
+        }
+    }
+    function connect() {
+        // Initiate the connection to the server
+        var options = {
+            codecEngine: scCodecMinBin,
+            hostname: document.getElementById('sc_host').value,
+            port: document.getElementById('sc_port').value,
+            secure: true,
+            path: document.getElementById('sc_path').value,
+            autoReconnect: true,
+        };
+
+        socket = socketClusterClient.create(options);
+        (async () => {
+            for await (let {error} of socket.listener('error')) {
+                console.error(error);
+            }
+        })();
+
+        (async () => {
+            for await (let event of socket.listener('connect')) {
+                console.log('Socket is connected');
+                const authToken = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZ0lkcyI6WzEsMiwzLDQsNSw2LDcsOCw5LDEwLDExLDEyLDEzLDE0LDE1LDE2LDE3LDE4LDE5LDIwLDIxLDIyLDIzLDI0XSwidWQiOnsiaSI6MCwidSI6ImFkbWluIn0sInBsIjoiU1lTVEVNIiwiaWF0IjoxNzIyNDE0NTMwLCJleHAiOjExNzIyNDE0NTI5fQ.WityqJTxi8yIdp8Qde8egcTliiHd80yQFuDqoKHkzwdRluPjP1xzPdTMgr1L89PFf6kwvZCBaC1E76gN1XW1900DMmMUJXQjXkv-RnbmFTBIDVIJBcV5Ofm_UckTL4EGBpAuRWGK71T99MXGjKyPfMzWgGpMC0G3kPXt7h0IZwGrPGYOdWmbTW0K_HZm2FmSAhYXmhB9wcogjnqhVXayj-yTHput6rsyTjYD5QyA_-1fwJt8lTNzSX6NefgbK7QYk3_DJgogqZhKTCONr-lIerdCaURtlXm6-99gnrpnlTBJHdrWy2zDcgGKQ8XRyrU-PLXo9hoLwZxuuoMclvJ0Iw'
+                socket.authenticate(authToken);
+                console.log(socket);
+            }
+        })();
+    }
+
+    function subscribe() {
+        const channelTxt = document.getElementById('channelTxt').value;
+        (async () => {
+            let channel = socket.subscribe(channelTxt);
+            await channel.listener('subscribe').once();
+            console.log(`subscribe: ${channelTxt}`);
+            for await (let data of channel) {
+                console.log(`${channelTxt}: ${JSON.stringify(data)}`);
+            }
+        })();
+    }
+
+    function subscribeUserEvent() {
+        for (let i = 1; i<=100; i++) {
+            (async () => {
+                let channel = socket.subscribe(`notify.user.${i}`);
+                await channel.listener('subscribe').once();
+                console.log(`subscribe: notify.user.${i}`);
+                for await (let data of channel) {
+                    console.log(`notify.user.${i}: ${JSON.stringify(data)}`);
+                }
+            })();
+        }
+
+    }
+
+    function subscribeMarket(data) {
+        let collect = [];
+        for (const stock of data) {
+            (async () => {
+                let channel = socket.subscribe(`market.bidoffer.${stock.ticker}`);
+                await channel.listener('subscribe').once();
+
+                for await (let st of channel) {
+                    let change;
+                    if(st?.ss == 'ATO' || st?.ss == 'ATC') {
+                      change = st?.ep? ((((st?.ep)/1000 - stock.value)/(stock.value))*100).toFixed(2): undefined;
+                    } else {
+                      change = ((((st?.c || st?.re)/1000 - stock.value)/(stock.value))*100).toFixed(2);
+                    }
+                    if (Math.abs(change) <= 1 && stock.ep) {
+                        notify({
+                            title: `${stock.ticker} recomment: ${stock.value} price: ${stock.ep/1000} change: ${change}`,
+                            body: stock.reason
+                        })
+                    }
+                }
+            })();
+            
+        }
+
+        for (const stock of data) {
+            (async () => {
+                let channel = socket.subscribe(`market.quote.${stock.ticker}`);
+                await channel.listener('subscribe').once();
+
+                for await (let st of channel) {
+                    let change;
+                    if(st?.ss == 'ATO' || st?.ss == 'ATC') {
+                      change = st?.ep? ((((st?.ep)/1000 - stock.value)/(stock.value))*100).toFixed(2): undefined;
+                    } else {
+                      change = ((((st?.c || st?.re)/1000 - stock.value)/(stock.value))*100).toFixed(2);
+                    }
+                    const exist = collect.filter((o) => { return o?.s == st?.s })
+                    if (Math.abs(change) <= 1 && exist?.length == 0) {
+                        collect.push(st);
+                        console.log(collect);
+                        notify({
+                            title: `${stock.ticker} recomment: ${stock.value} price: ${stock.c/1000} change: ${change}`,
+                            body: stock.reason
+                        })
+                    }
+                }
+            })();
+            
+        }
+
+    }
+
+    
+
+    function publish() {
+        const channelTxt = document.getElementById('channelTxt').value;
+        (async () => {
+            let channel = socket.subscribe(channelTxt);
+            console.log(`publish: ${channelTxt}`);
+            // Publish data to the channel.
+            const dataPublish = document.getElementById('dataPublish').value;
+            channel.transmitPublish(dataPublish);
+        })();
+    }
+
+    function login() {
+        (async () => {
+            const dataLogin = document.getElementById('dataLogin').value;
+            result = await socket.invoke('login', JSON.parse(dataLogin));
+
+            console.log(`result request: ${JSON.stringify(result)}`);
+            console.log(socket);
+        })();
+    }
+
+    function publishObject() {
+        const channelTxt = document.getElementById('channelTxt').value;
+        (async () => {
+            let channel = socket.subscribe(channelTxt);
+            console.log(`publish: ${channelTxt}`);
+            // Publish data to the channel.
+            const dataPublish = document.getElementById('dataPublish').value;
+            channel.transmitPublish(JSON.parse(dataPublish));
+        })();
+    }
+    function init() {
+            document.getElementById('dataLogin').textContent = '{\n' +
+                '  "uri": "post:/api/v1/login",\n' +
+                '  "body": {\n' +
+                '    "grant_type": "password_ws",\n' +
+                '    "client_id": "mas-ws",\n' +
+                '    "client_secret": "mas",\n' +
+                '    "username": "admin_ws",\n' +
+                '    "password": "1"\n' +
+                '  },\n' +
+                '  "headers": {\n' +
+                '    "platform": "WEB"\n' +
+                '  }\n' +
+                '}'
+            document.getElementById('dataPublish').textContent = '{\n    "channel": "notify.user.",\n    "method": "VERSION",\n    "payload": {\n        "wts": "1.0.x"\n    }\n}'
+
+        }
+    init();
+    connect();
+
+    function changeHost(host) {
+        console.log(host);
+       
+        if (host === 'grooo-dev') {
+            document.getElementById('sc_host').value = '150.95.109.206';
+            document.getElementById('sc_port').value = '8001';
+            document.getElementById('sc_secure').checked = false;
+            document.getElementById('sc_path').value = '/socketcluster/';
+        }
+        if (host === 'grooo-dev-domain') {
+            document.getElementById('sc_host').value = 'jbsv-wts.grooo.com.vn';
+            document.getElementById('sc_port').value = '443';
+            document.getElementById('sc_secure').checked = true;
+            document.getElementById('sc_path').value = '/ws/';
+        }
+    }
+
+
+    function requestDataPortfolio() {
+        (async () => {
+            const userIds = [
+            '050C161198',
+];
+            const assetOverview = '/api/v1/bridge/Assets/AssetsOverView?Custodycd=';
+            const stockInfo = '/api/v1/Account/UpdatePassword'
+
+            let portfolio = {};
+
+            const request = async (uri, user) => {
+                const rq = await socket.invoke('request', {
+                uri: `${uri}`,
+                body: {
+                    forwardService: 'navi-bridge',
+                    headers:{
+                        token: {
+                            ud: {
+                                sid: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6IjEwMDAwMSIsIlVzZXJfSW5mbyI6IntcIlVzZXJJZFwiOjEwMDAwMS4wLFwiVXNlck5hbWVcIjpcIkFETUlOXCIsXCJGdWxsTmFtZVwiOlwiYWRtaW5cIixcIk1vYmlsZVwiOlwiXCIsXCJPdHBfUmVjdlwiOjAuMCxcIklQQWRkcmVzc1wiOlwiXCIsXCJCcmFuY2hJZFwiOlwiMDAwMVwiLFwiSWRDb2RlXCI6XCJcIixcIkxpc3RBY2NvdW50XCI6XCJcIixcIkJhbmtBY2N0bm9cIjpcIlwiLFwiQmlkdk9ubGluZVwiOlwiXCJ9IiwibmJmIjoxNzIyMzg2NzIyLCJleHAiOjE3MjI1MDY3MjIsImlhdCI6MTcyMjM4NjcyMn0.9jD0tpZyF6XrkGReeUEcCOS6on71InolUvOKupjabVo'
+                            }
+                        }
+                    },
+                    CUSTODYCD: user,
+                    ACCTNO:'ALL',
+                    NewPassWord:'123456'
+                },
+                headers: { platform: 'WEB'}
+                });
+
+            return rq;
+            }
+
+            const sleep =  (time) => {
+            return new Promise((resolve) => setTimeout(resolve, time));
+            }
+
+            for (const user of userIds) {
+                await sleep(100);
+                const stock = await request(stockInfo, user);
+                const data = stock.data.map(({ COSTPRICE,SYMBOL,COSTVALUE, TOTALQTTY, PERPLVALUE, PLVALUE  }) => ({ 
+                    COSTPRICE: COSTPRICE.toLocaleString(),
+                    SYMBOL,
+                    COSTVALUE: COSTVALUE.toLocaleString(), 
+                    TOTALQTTY: TOTALQTTY.toLocaleString(),
+                    PERPLVALUE,
+                    PLVALUE: PLVALUE.toLocaleString()
+                 }));
+                 console.log(data);
+                portfolio[user] = data
+            }
+            $('#portfolio').jsonViewer(portfolio);
+
+        })();
+    }
+
+
+    const stocks = async () => {
+        const stockRecomment = await fetch('https://apipubaws.tcbs.com.vn/tcanalysis/v1/recommend/his?fData=1&fType=market&page=0&size=100&fRecommend=1&fTime=A')
+        let data = await stockRecomment.json();
+
+        const stockCode = data?.data?.map((o) => o.ticker);
+
+        let lastestSymbols = await fetch(`https://wts.finavi.com.vn/api/v1/market/listSymbol?symbolList=${stockCode.toString()}`);
+
+        lastestSymbols = await lastestSymbols.json();
+
+        const current = new Date();
+
+        data = data?.data?.filter((o) => { return current.getMonth() - new Date(o?.d).getMonth() >= 0 })
+
+        data = data?.map((o) => {
+
+            const lastestSymbol = lastestSymbols.find((k) =>  o.ticker == k.s )
+
+            return {
+                    c: lastestSymbol?.c || lastestSymbol?.re,
+                    a: ((((lastestSymbol?.c || lastestSymbol?.re)/1000 - o.value)/(o.value))*100).toFixed(2),
+                    ...o,
+                    reason: splitStringWithNewline(o.reason, 130),
+                }
+        })
+        $('#json-renderer').jsonViewer(data);
+
+        subscribeMarket(data);
+        
+    }
+
+    stocks()
+
+    // requestDataPortfolio()
+
+</script>
+</body>
+
+</html>
